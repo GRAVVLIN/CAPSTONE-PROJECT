@@ -1,0 +1,28 @@
+{
+    "articles": [
+        {
+            "id": 1,
+            "title": "10 Tips to Save Money",
+            "tags": "saving, budgeting, tips",
+            "link": "https://www.regions.com/insights/personal/personal-finances/budgeting-and-saving/10-best-ways-to-save-money"
+        },
+        {
+            "id": 2,
+            "title": "How to Manage Entertainment Expenses",
+            "tags": "budgeting, entertainment",
+            "link": "https://www.hellobrigit.com/learn/how-to-save-money-on-entertainment"
+        },
+        {
+            "id": 3,
+            "title": "Beginner's Guide to Financial Planning",
+            "tags": "planning, savings, finance",
+            "link": "https://www.nerdwallet.com/article/investing/what-is-a-financial-plan"
+        },
+        {
+           "id": 3,
+            "title": "How to stop overspending your income",
+            "tags": "overspending, income, general",
+            "link": "https://money.usnews.com/money/personal-finance/spending/articles/inside-the-psychology-of-overspending-and-how-to-stop" 
+        }
+    ]
+}
