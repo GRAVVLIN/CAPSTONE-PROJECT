@@ -1,5 +1,7 @@
 from flask import Flask, jsonify, request
+from flask_cors import CORS, cross_origin
 import pickle
+import json
 import numpy as np
 from google.cloud import firestore
 from google.oauth2.service_account import Credentials
@@ -8,8 +10,12 @@ from google.oauth2.service_account import Credentials
 app = Flask(__name__)
 
 # Load the Isolation Forest model from PKL file
-with open('Ez_money.pkl', 'rb') as model_file:
+with open('isolation_forest_model.pkl', 'rb') as model_file:
     model = pickle.load(model_file)
+
+#bikin json file nya dulu ygy
+with open('recarticle.json', 'r') as file:
+    data_article = json.load(file)
 
 # Google Cloud Firestore setup
 credentials = Credentials.from_service_account_file('./firestore-admin.json')
@@ -35,8 +41,65 @@ def detect_anomalies(expenses: list):
     anomalies = [expense for expense, prediction in zip(expenses, predictions) if prediction == -1]
     return anomalies
 
-@app.route('/initialize_balance', methods=['POST'])
-def initialize_balance():
+def generate_chart_data(transactions):
+    # Initialize chart data
+    category_distribution = {}
+    income_vs_expenses = {'income': 0, 'expenses': 0}
+    spending_trends = {}
+
+    for transaction in transactions:
+        trans_data = transaction.to_dict()
+        if 'amount' in trans_data and 'type' in trans_data and 'category' in trans_data:
+            amount = trans_data['amount']
+            category = trans_data['category']
+            trans_type = trans_data['type']
+            date = trans_data.get('date', 'unknown')[:10]  # Extract date as YYYY-MM-DD
+
+            # Update income vs. expenses
+            if trans_type == 'income':
+                income_vs_expenses['income'] += amount
+            elif trans_type == 'expenses':
+                income_vs_expenses['expenses'] += amount
+
+                # Update category distribution
+                if category not in category_distribution:
+                    category_distribution[category] = 0
+                category_distribution[category] += amount
+
+                # Update spending trends
+                if date not in spending_trends:
+                    spending_trends[date] = 0
+                spending_trends[date] += amount
+
+    return {
+        'categoryDistribution': category_distribution,
+        'incomeVsExpenses': income_vs_expenses,
+        'spendingTrends': spending_trends
+    }
+
+def generate_financial_advice(chart_data):
+    advice = []
+    income = chart_data['incomeVsExpenses']['income']
+    expenses = chart_data['incomeVsExpenses']['expenses']
+    savings = income - expenses
+
+    # Savings advice
+    if savings < (income * 0.2):  # Less than 20% savings
+        advice.append("Consider increasing your savings by reducing non-essential expenses.")
+
+    # High spending categories advice
+    for category, total in chart_data['categoryDistribution'].items():
+        if total > (expenses * 0.3):  # More than 30% of expenses in one category
+            advice.append(f"You are spending a lot on {category}. Try setting a budget limit.")
+
+    # General advice
+    if expenses > income:
+        advice.append("Your expenses exceed your income. Consider reviewing your spending habits.")
+
+    return advice
+
+# @app.route('/initialize_balance', methods=['POST'])
+# def initialize_balance():
     try:
         # Input initial income and savings mode
         data = request.json
@@ -65,94 +128,87 @@ def initialize_balance():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/add_transaction', methods=['POST'])
-def add_transaction():
-    try:
-        # Input transaction data (income or expense)
-        data = request.json
-        user_id = data.get('userId')
-        transaction_type = data.get('transactionType')  # 'income' or 'expense'
-        amount = data.get('amount')
-        category = data.get('category')
+# @app.route('/add_transaction', methods=['POST'])
+# def add_transaction():
+#     try:
+#         # Input transaction data (income or expense)
+#         data = request.json
+#         user_id = data.get('userId')
+#         transaction_type = data.get('transactionType')  # 'income' or 'expense'
+#         amount = data.get('amount')
+#         category = data.get('category')
         
-        # Validate the inputs
-        if not user_id or not transaction_type or amount is None or not category:
-            return jsonify({"error": "Missing required fields"}), 400
+#         # Validate the inputs
+#         if not user_id or not transaction_type or amount is None or not category:
+#             return jsonify({"error": "Missing required fields"}), 400
         
-        if transaction_type not in ['income', 'expense']:
-            return jsonify({"error": "Invalid transaction type"}), 400
+#         if transaction_type not in ['income', 'expense']:
+#             return jsonify({"error": "Invalid transaction type"}), 400
 
-        # Store the transaction in Firestore
-        transaction_ref = db.collection('users').document(user_id).collection('transactions').document()
-        transaction_ref.set({
-            'transactionType': transaction_type,
-            'amount': amount,
-            'category': category,
-            'timestamp': firestore.SERVER_TIMESTAMP
-        })
+#         # Store the transaction in Firestore
+#         transaction_ref = db.collection('users').document(user_id).collection('transactions').document()
+#         transaction_ref.set({
+#             'transactionType': transaction_type,
+#             'amount': amount,
+#             'category': category,
+#             'timestamp': firestore.SERVER_TIMESTAMP
+#         })
         
-        # Handle anomaly detection based on new transaction
-        transactions_ref = db.collection('users').document(user_id).collection('transactions')
-        expenses_list = []
+#         # Handle anomaly detection based on new transaction
+#         transactions_ref = db.collection('users').document(user_id).collection('transactions')
+#         expenses_list = []
         
-        # Fetch and accumulate expenses
-        month_transactions = transactions_ref.stream()
-        for transaction in month_transactions:
-            trans_data = transaction.to_dict()
-            if trans_data['transactionType'] == 'expense':
-                expenses_list.append(trans_data['amount'])
+#         # Fetch and accumulate expenses
+#         month_transactions = transactions_ref.stream()
+#         for transaction in month_transactions:
+#             trans_data = transaction.to_dict()
+#             if trans_data['transactionType'] == 'expense':
+#                 expenses_list.append(trans_data['amount'])
 
-        # Detect anomalies in expenses
-        anomalies = detect_anomalies(expenses_list)
+#         # Detect anomalies in expenses
+#         anomalies = detect_anomalies(expenses_list)
         
-        # Prepare response
-        return jsonify({
-            'message': 'Transaction added successfully',
-            'anomalies': anomalies
-        }), 200
+#         # Prepare response
+#         return jsonify({
+#             'message': 'Transaction added successfully',
+#             'anomalies': anomalies
+#         }), 200
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
 
 @app.route('/analytics/<userId>/<month>', methods=['GET'])
 def get_monthly_analytics(userId, month):
     try:
-        # Fetch monthly transaction data from Firestore
-        transactions_ref = db.collection('users').document(userId).collection('transactions')
-        month_transactions = transactions_ref.where('month', '==', month).stream()
+        transactions_ref = db.collection('users').document(userId).collection('transactions').document(month).collection('records')
+        month_transactions = list(transactions_ref.stream())
 
-        # Initialize variables to calculate total income and expenses
-        total_income = 0.0
-        total_expenses = 0.0
-        expenses_list = []
-        
-        for transaction in month_transactions:
-            trans_data = transaction.to_dict()
-            # Calculate total income and expenses
-            if 'amount' in trans_data:
-                if trans_data['transactionType'] == 'income':
-                    total_income += trans_data['amount']
-                elif trans_data['transactionType'] == 'expense':
-                    total_expenses += trans_data['amount']
-                    expenses_list.append(trans_data['amount'])
+        # Generate analytics data
+        chart_data = generate_chart_data(month_transactions)
 
-        # Detect anomalies in the expenses, but only if there are expenses data
-        anomalies = detect_anomalies(expenses_list)
+        # Detect anomalies
+        expense_amounts = [
+            trans.to_dict().get('amount', 0)
+            for trans in month_transactions
+            if trans.to_dict().get('type', '').lower() == 'expenses'
+        ]
+        print(f"Expenses detected for anomaly detection: {expense_amounts}")
+        anomalies = detect_anomalies(expense_amounts)
 
-        # Prepare the monthly analytics data
+        # Generate financial advice
+        financial_advice = generate_financial_advice(chart_data)
+
+        # Prepare response
         monthly_analytics = {
             'userId': userId,
             'month': month,
-            'totalIncome': total_income,
-            'totalExpenses': total_expenses,
-            'balance': total_income - total_expenses,
-            'anomalies': anomalies
+            'chartData': chart_data,
+            'anomalies': anomalies,
+            'financialAdvice': financial_advice
         }
 
-        # Add the result to the array (instead of saving directly to Firestore)
-        all_analytics.append(monthly_analytics)
-
-        # Optionally: Return the analytics data for this request
+        # Save to Firestore (optional)
+        # db.collection('users').document(userId).collection('transactions').document(month).collection('analysis').document('result').set(monthly_analytics)
         return jsonify(monthly_analytics), 200
 
     except Exception as e:
@@ -177,4 +233,4 @@ def save_all_analytics():
 
 # Run the Flask app
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=8000)
+    app.run(debug=True, host="0.0.0.0", port=5000)
